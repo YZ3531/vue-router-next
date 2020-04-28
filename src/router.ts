@@ -542,10 +542,6 @@ export function createRouter(options: RouterOptions): Router {
     for (const record of leavingRecords) {
       // remove registered guards from removed matched records
       record.leaveGuards = []
-      // free the references
-
-      // TODO: to refactor once keep-alive and transition can be supported
-      record.instances = {}
     }
 
     // only consider as push if it's not the first navigation
