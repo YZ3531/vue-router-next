@@ -161,18 +161,13 @@
     <hr />
 
     <!-- <transition
-      name="fade"
-      mode="out-in"
-      @before-enter="flushWaiter"
-      @before-leave="setupWaiter"
-    >
-      <router-view :name="viewName" :route="$route" />
-    </transition> -->
-    <!-- <router-view :name="viewName" :route="$route" /> -->
-
-    <!-- <router-view :name="viewName" v-slot="{ Component }">
-        <component :is="Component" />
-      </router-view> -->
+            name="fade"
+            mode="out-in"
+            @before-enter="flushWaiter"
+            @before-leave="setupWaiter"
+          >
+            <component :is="Component" />
+          </transition> -->
 
     <Suspense>
       <template #default>

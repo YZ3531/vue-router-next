@@ -76,7 +76,7 @@ export const RouterView = (defineComponent({
         // add a onVnodeUpdated hook
         if (currentMatched && viewRef.value)
           currentMatched.instances[currentName] = viewRef.value
-        // TODO: trigger beforeRouteEnter hooks
+        // TODO: trigger beforeRouteEnter callbacks but doesn't work with keep alive, it needs activated
       }
 
       function onVnodeUnmounted() {
@@ -93,6 +93,7 @@ export const RouterView = (defineComponent({
         ...(Component && propsData.value),
         ...attrs,
         onVnodeMounted,
+        onVnodeUnmounted,
         ref: viewRef,
       }
 
@@ -116,18 +117,18 @@ export const RouterView = (defineComponent({
         if (isKeepAlive(child)) {
           // get the inner child if we have a keep-alive
           let innerChild = getKeepAliveChild(child)
-          if (!innerChild) return null
-          ;(child.props = child.props || {}).onVnodeUnmounted = onVnodeUnmounted
+          if (!innerChild)
+            return null
 
-          // we know the array exists because innerChild exists
+            // we know the array exists because innerChild exists
           ;(child.children as VNodeArrayChildren)[0] = cloneVNode(
             innerChild,
             componentProps
           )
           return child
         } else {
-          componentProps.onVnodeUnmounted = onVnodeUnmounted
           // to deal with initial transition with no children
+          // TODO: retrieve the component instance, not the DOM element
           componentProps.onVnodeUpdated = componentProps.onVnodeMounted
           return cloneVNode(child, componentProps)
         }
