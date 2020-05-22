@@ -6,22 +6,28 @@ import {
   PropType,
   computed,
   ComponentPublicInstance,
-  Component,
   warn,
   Comment,
   VNode,
   shallowRef,
   VNodeArrayChildren,
   cloneVNode,
+  VNodeProps,
 } from 'vue'
-import { RouteLocationNormalizedLoaded } from './types'
+import { RouteLocationNormalizedLoaded, RouteLocationNormalized } from './types'
 import {
   matchedRouteKey,
   viewDepthKey,
   routeLocationKey,
 } from './injectionSymbols'
 
-export const RouterView = (defineComponent({
+export interface RouterViewProps {
+  name?: string
+  // allow looser type for user facing api
+  route?: RouteLocationNormalized
+}
+
+export const RouterViewImpl = defineComponent({
   name: 'RouterView',
   props: {
     name: {
@@ -139,7 +145,7 @@ export const RouterView = (defineComponent({
       return Component ? h(Component, componentProps) : null
     }
   },
-}) as unknown) as Component
+})
 
 function getKeepAliveChild(vnode: VNode): VNode | undefined {
   return isKeepAlive(vnode)
@@ -151,3 +157,11 @@ function getKeepAliveChild(vnode: VNode): VNode | undefined {
 
 export const isKeepAlive = (vnode: VNode): boolean =>
   (vnode.type as any).__isKeepAlive
+
+// export the public type for h/tsx inference
+// also to avoid inline import() in generated d.ts files
+export const RouterView = (RouterViewImpl as any) as {
+  new (): {
+    $props: VNodeProps & RouterViewProps
+  }
+}

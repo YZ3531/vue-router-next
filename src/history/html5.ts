@@ -14,10 +14,12 @@ import {
   computeScrollPosition,
   ScrollPositionCoordinates,
 } from '../scrollBehavior'
-import { warn } from 'vue'
+import { warn } from '../warning'
 import { stripBase } from '../location'
 
 type PopStateListener = (this: Window, ev: PopStateEvent) => any
+
+let createBaseLocation = () => location.protocol + '//' + location.host
 
 interface StateEntry extends HistoryState {
   back: HistoryLocationNormalized | null
@@ -187,7 +189,9 @@ function useHistoryStateNavigation(base: string) {
         // the length is off by one, we need to decrease it
         position: history.length - 1,
         replaced: true,
-        scroll: computeScrollPosition(),
+        // don't add a scroll as the user may have an anchor and we want
+        // scrollBehavior to be triggered without a saved position
+        scroll: null,
       },
       true
     )
@@ -198,14 +202,14 @@ function useHistoryStateNavigation(base: string) {
     state: StateEntry,
     replace: boolean
   ): void {
-    const url = base + to.fullPath
+    const url = createBaseLocation() + base + to.fullPath
     try {
       // BROWSER QUIRK
       // NOTE: Safari throws a SecurityError when calling this function 100 times in 30 seconds
       history[replace ? 'replaceState' : 'pushState'](state, '', url)
       historyState.value = state
     } catch (err) {
-      warn('[vue-router]: Error with push/replace State', err)
+      warn('Error with push/replace State', err)
       // Force the navigation, this also resets the call count
       window.location[replace ? 'replace' : 'assign'](url)
     }
@@ -262,7 +266,7 @@ function useHistoryStateNavigation(base: string) {
   }
 }
 
-export default function createWebHistory(base?: string): RouterHistory {
+export function createWebHistory(base?: string): RouterHistory {
   base = normalizeBase(base)
 
   const historyNavigation = useHistoryStateNavigation(base)

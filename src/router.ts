@@ -5,13 +5,13 @@ import {
   PostNavigationGuard,
   START_LOCATION_NORMALIZED,
   Lazy,
-  MatcherLocation,
   RouteLocationNormalizedLoaded,
   RouteLocation,
   RouteRecordName,
   isRouteName,
   NavigationGuardWithThis,
   RouteLocationOptions,
+  MatcherLocationRaw,
 } from './types'
 import { RouterHistory, HistoryState } from './history/common'
 import {
@@ -38,11 +38,12 @@ import {
   parseQuery as originalParseQuery,
   stringifyQuery as originalStringifyQuery,
 } from './query'
-import { shallowRef, Ref, nextTick, App, warn } from 'vue'
+import { shallowRef, Ref, nextTick, App } from 'vue'
 import { RouteRecord, RouteRecordNormalized } from './matcher/types'
 import { parseURL, stringifyURL, isSameRouteLocation } from './location'
 import { extractComponentsGuards, guardToPromiseFn } from './navigationGuards'
 import { applyRouterPlugin } from './install'
+import { warn } from './warning'
 
 /**
  * Internal type to define an ErrorHandler
@@ -175,10 +176,15 @@ export function createRouter(options: RouterOptions): Router {
   )
   let pendingLocation: RouteLocation = START_LOCATION_NORMALIZED
 
-  if (isBrowser && 'scrollRestoration' in history) {
+  // leave the scrollRestoration if no scrollBehavior is provided
+  if (isBrowser && scrollBehavior && 'scrollRestoration' in history) {
     history.scrollRestoration = 'manual'
   }
 
+  const normalizeParams = applyToParams.bind(
+    null,
+    paramValue => '' + paramValue
+  )
   const encodeParams = applyToParams.bind(null, encodeParam)
   const decodeParams = applyToParams.bind(null, decode)
 
@@ -232,6 +238,14 @@ export function createRouter(options: RouterOptions): Router {
         currentLocation
       )
 
+      if (__DEV__) {
+        let href = routerHistory.base + locationNormalized.fullPath
+        if (href.startsWith('//'))
+          warn(
+            `Location "${rawLocation}" resolved to "${href}". A resolved location cannot start with multiple slashes.`
+          )
+      }
+
       return {
         // fullPath: locationNormalized.fullPath,
         // query: locationNormalized.query,
@@ -248,32 +262,47 @@ export function createRouter(options: RouterOptions): Router {
       }
     }
 
-    // TODO: dev warning if params and path at the same time
+    let matcherLocation: MatcherLocationRaw
 
     // path could be relative in object as well
     if ('path' in rawLocation) {
-      rawLocation = {
+      if (
+        __DEV__ &&
+        'params' in rawLocation &&
+        !('name' in rawLocation) &&
+        Object.keys((rawLocation as any).params).length
+      ) {
+        warn(
+          `Path "${
+            (rawLocation as any).path
+          }" was passed with params but they will be ignored. Use a named route alongside params instead.`
+        )
+      }
+      matcherLocation = {
         ...rawLocation,
         path: parseURL(parseQuery, rawLocation.path, currentLocation.path).path,
       }
+    } else {
+      matcherLocation = {
+        ...rawLocation,
+        params: encodeParams(rawLocation.params),
+      }
     }
 
-    let matchedRoute: MatcherLocation = // relative or named location, path is ignored
-      // for same reason TS thinks rawLocation.params can be undefined
-      matcher.resolve(
-        'params' in rawLocation
-          ? { ...rawLocation, params: encodeParams(rawLocation.params) }
-          : rawLocation,
-        currentLocation
-      )
+    let matchedRoute = matcher.resolve(matcherLocation, currentLocation)
 
     const hash = encodeHash(rawLocation.hash || '')
 
+    if (__DEV__ && hash && hash[0] !== '#') {
+      warn(
+        `A \`hash\` should always start with the character "#". Replace "${hash}" with "#${hash}".`
+      )
+    }
+
     // put back the unencoded params as given by the user (avoid the cost of decoding them)
-    // TODO: normalize params if we accept numbers as raw values
     matchedRoute.params =
       'params' in rawLocation
-        ? rawLocation.params!
+        ? normalizeParams(rawLocation.params)
         : decodeParams(matchedRoute.params)
 
     const fullPath = stringifyURL(stringifyQuery, {
@@ -281,6 +310,14 @@ export function createRouter(options: RouterOptions): Router {
       hash,
       path: matchedRoute.path,
     })
+
+    if (__DEV__) {
+      let href = routerHistory.base + fullPath
+      if (href.startsWith('//'))
+        warn(
+          `Location "${rawLocation}" resolved to "${href}". A resolved location cannot start with multiple slashes.`
+        )
+    }
 
     return {
       fullPath,
@@ -327,8 +364,30 @@ export function createRouter(options: RouterOptions): Router {
       let newTargetLocation = locationAsObject(
         typeof redirect === 'function' ? redirect(targetLocation) : redirect
       )
+
+      if (
+        __DEV__ &&
+        !('path' in newTargetLocation) &&
+        !('name' in newTargetLocation)
+      ) {
+        warn(
+          `Invalid redirect found:\n${JSON.stringify(
+            newTargetLocation,
+            null,
+            2
+          )}\n when navigating to "${
+            targetLocation.fullPath
+          }". A redirect must contain a name or path.`
+        )
+        return Promise.reject(new Error('Invalid redirect'))
+      }
       return pushWithRedirect(
         {
+          // having a path here would be a problem with relative locations but
+          // at the same time it doesn't make sense for a redirect to be
+          // relative (no name, no path) because it would create an infinite
+          // loop. Since newTargetLocation must either have a `path` or a
+          // `name`, this will never happen
           ...targetLocation,
           ...newTargetLocation,
           state: data,
@@ -346,11 +405,23 @@ export function createRouter(options: RouterOptions): Router {
     toLocation.redirectedFrom = redirectedFrom
     let failure: NavigationFailure | void | undefined
 
-    if (!force && isSameRouteLocation(from, targetLocation))
+    if (!force && isSameRouteLocation(from, targetLocation)) {
       failure = createRouterError<NavigationFailure>(
         ErrorTypes.NAVIGATION_DUPLICATED,
         { to: toLocation, from }
       )
+      // trigger scroll to allow scrolling to the same anchor
+      handleScroll(
+        from,
+        from,
+        // this is a push, the only way for it to be triggered from a
+        // history.listen is with a redirect, which makes it become a pus
+        true,
+        // This cannot be the first navigation because the initial location
+        // cannot be manually navigated to
+        false
+      )
+    }
 
     return (failure ? Promise.resolve(failure) : navigate(toLocation, from))
       .catch((error: NavigationFailure | NavigationRedirectError) => {
@@ -563,23 +634,7 @@ export function createRouter(options: RouterOptions): Router {
 
     // accept current navigation
     currentRoute.value = toLocation
-    // TODO: call handleScroll in afterEach so it can also be triggered on
-    // duplicated navigation (e.g. same anchor navigation). It needs exposing
-    // the navigation information (type, direction)
-    if (isBrowser) {
-      // if we are pushing, we cannot have a saved position. This is important
-      // when visiting /b from /a, scrolling, going back to /a by with the back
-      // button and then clicking on a link to /b instead of the forward button
-      const savedScroll =
-        !isPush && getSavedScrollPosition(getScrollKey(toLocation.fullPath, 0))
-      handleScroll(
-        toLocation,
-        from,
-        savedScroll || ((isFirstNavigation || !isPush) && state && state.scroll)
-      ).catch(err => {
-        triggerError(err)
-      })
-    }
+    handleScroll(toLocation, from, isPush, isFirstNavigation)
 
     markAsReady()
   }
@@ -705,17 +760,25 @@ export function createRouter(options: RouterOptions): Router {
   }
 
   // Scroll behavior
-
   function handleScroll(
     to: RouteLocationNormalizedLoaded,
     from: RouteLocationNormalizedLoaded,
-    scrollPosition?: Required<ScrollPositionCoordinates>
-  ) {
-    if (!scrollBehavior) return Promise.resolve()
+    isPush: boolean,
+    isFirstNavigation: boolean
+  ): Promise<any> {
+    if (!isBrowser || !scrollBehavior) return Promise.resolve()
+
+    let scrollPosition: Required<ScrollPositionCoordinates> | null =
+      (!isPush && getSavedScrollPosition(getScrollKey(to.fullPath, 0))) ||
+      ((isFirstNavigation || !isPush) &&
+        (history.state as HistoryState) &&
+        history.state.scroll) ||
+      null
 
     return nextTick()
-      .then(() => scrollBehavior!(to, from, scrollPosition || null))
+      .then(() => scrollBehavior!(to, from, scrollPosition))
       .then(position => position && scrollToPosition(position))
+      .catch(triggerError)
   }
 
   function go(delta: number) {

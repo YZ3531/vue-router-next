@@ -1,6 +1,6 @@
 import { LocationQuery, LocationQueryRaw } from '../query'
 import { PathParserOptions } from '../matcher'
-import { Ref, ComputedRef, ComponentOptions } from 'vue'
+import { Ref, ComputedRef, Component } from 'vue'
 import { RouteRecord, RouteRecordNormalized } from '../matcher/types'
 import { HistoryState } from '../history/common'
 import { NavigationFailure } from '../errors'
@@ -20,14 +20,12 @@ export type VueUseOptions<T> = {
 export type TODO = any
 
 export type RouteParamValue = string
-// TODO: should we allow more values like numbers and normalize them to strings?
-// type RouteParamValueRaw = RouteParamValue | number
+export type RouteParamValueRaw = RouteParamValue | number
 export type RouteParams = Record<string, RouteParamValue | RouteParamValue[]>
-export type RouteParamsRaw = RouteParams
-// export type RouteParamsRaw = Record<
-//   string,
-//   RouteParamValueRaw | RouteParamValueRaw[]
-// >
+export type RouteParamsRaw = Record<
+  string,
+  RouteParamValueRaw | RouteParamValueRaw[]
+>
 
 export interface RouteQueryAndHash {
   query?: LocationQueryRaw
@@ -37,13 +35,22 @@ export interface LocationAsPath {
   path: string
 }
 
-export interface LocationAsName {
+export interface LocationAsNameRaw {
   name: RouteRecordName
   params?: RouteParamsRaw
 }
 
-export interface LocationAsRelative {
+export interface LocationAsName {
+  name: RouteRecordName
+  params?: RouteParams
+}
+
+export interface LocationAsRelativeRaw {
   params?: RouteParamsRaw
+}
+
+export interface LocationAsRelative {
+  params?: RouteParams
 }
 
 export interface RouteLocationOptions {
@@ -67,8 +74,8 @@ export interface RouteLocationOptions {
 export type RouteLocationRaw =
   | string
   | (RouteQueryAndHash & LocationAsPath & RouteLocationOptions)
-  | (RouteQueryAndHash & LocationAsName & RouteLocationOptions)
-  | (RouteQueryAndHash & LocationAsRelative & RouteLocationOptions)
+  | (RouteQueryAndHash & LocationAsNameRaw & RouteLocationOptions)
+  | (RouteQueryAndHash & LocationAsRelativeRaw & RouteLocationOptions)
 
 export interface RouteLocationMatched extends RouteRecordNormalized {
   // components cannot be Lazy<RouteComponent>
@@ -128,7 +135,7 @@ export interface RouteLocationNormalized extends _RouteLocationBase {
   matched: RouteRecordNormalized[] // non-enumerable
 }
 
-export type RouteComponent = ComponentOptions
+export type RouteComponent = Component
 export type RawRouteComponent = RouteComponent | Lazy<RouteComponent>
 
 export type RouteRecordName = string | symbol
@@ -230,7 +237,7 @@ export interface MatcherLocation
     'name' | 'path' | 'params' | 'matched' | 'meta'
   > {}
 
-export interface NavigationGuardCallback {
+export interface NavigationGuardNext {
   (): void
   (error: Error): void
   (location: RouteLocationRaw): void
@@ -245,7 +252,7 @@ export interface NavigationGuard {
     // TODO: we could maybe add extra information like replace: true/false
     to: RouteLocationNormalized,
     from: RouteLocationNormalized,
-    next: NavigationGuardCallback
+    next: NavigationGuardNext
   ): any
 }
 
@@ -254,7 +261,7 @@ export interface NavigationGuardWithThis<T> {
     this: T,
     to: RouteLocationNormalized,
     from: RouteLocationNormalized,
-    next: NavigationGuardCallback
+    next: NavigationGuardNext
   ): any
 }
 
