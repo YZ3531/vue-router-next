@@ -59,17 +59,20 @@ export const RouterViewImpl = defineComponent({
       // on matchedRoute.value
       const { props } = matchedRoute.value!
       if (!props) return {}
+      // this means that if the user hasn't defined all props defined as params,
+      // they will have extra attribute inherited by their component
       if (props === true) return route.value.params
 
       return typeof props === 'object' ? props : props(route.value)
     })
 
+    // passed to onBeforeRoute* guards
     provide(matchedRouteKey, matchedRoute)
 
     const viewRef = shallowRef<ComponentPublicInstance>()
 
     return () => {
-      // we nee the value at the time we render because when we unmount, we
+      // we need the value at the time we render because when we unmount, we
       // navigated to a different location so the value is different
       const currentMatched = matchedRoute.value
       const currentName = props.name
@@ -138,6 +141,8 @@ export const RouterViewImpl = defineComponent({
           componentProps.onVnodeUpdated = componentProps.onVnodeMounted
           return cloneVNode(child, componentProps)
         }
+
+        // TODO: how to detect the unmount of keepalive to reset the instance
       }
 
       componentProps.onVnodeUnmounted = onVnodeUnmounted
