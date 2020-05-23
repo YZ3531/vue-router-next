@@ -1,6 +1,5 @@
 <template>
   <div>
-    <pre>{{ currentLocation }}</pre>
     <section class="info">
       Name:
       <pre id="name">{{ currentLocation.name }}</pre>
@@ -157,30 +156,52 @@
       </li>
     </ul>
     <button @click="toggleViewName">Toggle view</button>
+    <button @click="show = !show">Toggle show</button>
 
     <hr />
 
-    <!-- <transition
-            name="fade"
-            mode="out-in"
-            @before-enter="flushWaiter"
-            @before-leave="setupWaiter"
-          >
-            <component :is="Component" />
-          </transition> -->
+    <!-- NOTE: this version without RouterView works -->
 
-    <Suspense>
-      <template #default>
-        <router-view :name="viewName" v-slot="{ Component }">
+    <!-- <transition name="fade" mode="out-in">
+      <keep-alive>
+        <component :is="computedComponent" />
+      </keep-alive>
+    </transition> -->
+
+    <!-- <router-view :name="viewName" v-slot="{ Component }">
+      <transition
+        name="fade"
+        mode="out-in"
+        @before-enter="flushWaiter"
+        @before-leave="setupWaiter"
+      >
+        <component :is="Component" />
+      </transition>
+    </router-view> -->
+
+    <template v-if="show">
+      <!-- <Suspense>
+        <template #default> -->
+
+      <router-view :name="viewName" v-slot="{ Component }">
+        <transition
+          name="fade"
+          mode="out-in"
+          @before-enter="flushWaiter"
+          @before-leave="setupWaiter"
+        >
           <keep-alive>
             <component :is="Component" />
           </keep-alive>
-        </router-view>
-      </template>
-      <template #fallback>
-        Loading...
-      </template>
-    </Suspense>
+        </transition>
+      </router-view>
+
+      <!-- </template>
+        <template #fallback>
+          Loading...
+        </template>
+      </Suspense> -->
+    </template>
   </div>
 </template>
 
@@ -195,10 +216,17 @@ export default defineComponent({
     const route = useRoute()
     const state = inject('state')
     const viewName = ref('default')
+    const show = ref(true)
 
     const currentLocation = computed(() => {
       const { matched, ...rest } = route
       return rest
+    })
+
+    const computedComponent = computed(() => {
+      const match = route.matched[0]
+
+      return match && match.components.default
     })
 
     function flushWaiter() {
@@ -213,7 +241,9 @@ export default defineComponent({
     )
 
     return {
+      show,
       currentLocation,
+      computedComponent,
       nextUserLink,
       state,
       flushWaiter,

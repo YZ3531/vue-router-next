@@ -13,6 +13,8 @@ import {
   VNodeArrayChildren,
   cloneVNode,
   VNodeProps,
+  watch,
+  toRefs,
 } from 'vue'
 import { RouteLocationNormalizedLoaded, RouteLocationNormalized } from './types'
 import {
@@ -71,28 +73,43 @@ export const RouterViewImpl = defineComponent({
 
     const viewRef = shallowRef<ComponentPublicInstance>()
 
-    return () => {
-      // we need the value at the time we render because when we unmount, we
-      // navigated to a different location so the value is different
-      const currentMatched = matchedRoute.value
-      const currentName = props.name
+    watch(
+      [viewRef, matchedRoute, toRefs(props).name] as const,
+      (
+        [instance, currentMatched, name],
+        [_prevInstance, prevMatched, prevName]
+      ) => {
+        console.log('watch', name, currentMatched, instance)
+        // clear previous instance
+        if (
+          prevMatched &&
+          prevName &&
+          (currentMatched !== prevMatched || name !== prevName)
+        )
+          prevMatched.instances[prevName] = null
+        if (currentMatched) currentMatched.instances[name] = instance
+      },
+      { immediate: false }
+    )
 
-      function onVnodeMounted() {
-        console.log('mount', currentMatched, currentName, viewRef.value)
-        // usually if we mount, there is a matched record, but that's not true
-        // when using the v-slot api. When dealing with transitions, they can
-        // initially not render anything, so the ref can be empty. That's why we
-        // add a onVnodeUpdated hook
-        if (currentMatched && viewRef.value)
-          currentMatched.instances[currentName] = viewRef.value
-        // TODO: trigger beforeRouteEnter callbacks but doesn't work with keep alive, it needs activated
-      }
+    return () => {
+      // function onVnodeMounted() {
+      // console.log('mount', currentMatched, currentName, viewRef.value)
+      // usually if we mount, there is a matched record, but that's not true
+      // when using the v-slot api. When dealing with transitions, they can
+      // initially not render anything, so the ref can be empty. That's why we
+      // add a onVnodeUpdated hook
+      // if (currentMatched && viewRef.value)
+      // currentMatched.instances[currentName] = viewRef.value
+      // TODO: trigger beforeRouteEnter callbacks but doesn't work with keep alive, it needs activated
+      // }
 
       function onVnodeUnmounted() {
-        console.log('unmount')
+        const currentMatched = matchedRoute.value
+        console.log('unmount', props.name)
         if (currentMatched) {
           // remove the instance reference to prevent leak
-          currentMatched.instances[currentName] = null
+          currentMatched.instances[props.name] = null
         }
       }
 
@@ -101,7 +118,6 @@ export const RouterViewImpl = defineComponent({
         // only compute props if there is a matched record
         ...(Component && propsData.value),
         ...attrs,
-        onVnodeMounted,
         onVnodeUnmounted,
         ref: viewRef,
       }
@@ -122,30 +138,24 @@ export const RouterViewImpl = defineComponent({
         let child: VNode | undefined = children[0]
         if (!child) return null
 
-        // keep alive is treated differently
         if (isKeepAlive(child)) {
           // get the inner child if we have a keep-alive
           let innerChild = getKeepAliveChild(child)
-          if (!innerChild)
-            return null
+          if (!innerChild) return null
 
-            // we know the array exists because innerChild exists
+          // we need to detect when keep alive unmounts instead
+          delete componentProps.onVnodeUnmounted
+
+          // we know the array exists because innerChild exists
           ;(child.children as VNodeArrayChildren)[0] = cloneVNode(
             innerChild,
             componentProps
           )
-          return child
+          return cloneVNode(child, { onVnodeUnmounted })
         } else {
-          // to deal with initial transition with no children
-          // TODO: retrieve the component instance, not the DOM element
-          componentProps.onVnodeUpdated = componentProps.onVnodeMounted
           return cloneVNode(child, componentProps)
         }
-
-        // TODO: how to detect the unmount of keepalive to reset the instance
       }
-
-      componentProps.onVnodeUnmounted = onVnodeUnmounted
 
       return Component ? h(Component, componentProps) : null
     }
